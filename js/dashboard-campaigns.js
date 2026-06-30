@@ -28,7 +28,7 @@ export async function loadCampaigns() {
   }
 }
 
-export function renderCampaignsGrid(campaigns, closers) {
+function renderCampaignsGrid(campaigns, closers) {
   closers = closers || [];
   var grid = document.getElementById('campaignsGrid');
 

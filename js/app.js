@@ -9,7 +9,7 @@ import {
   clearSlotAndRetry, goEmergencyPool, fetchCloser, fetchSlots, renderSlots, selectSlot,
   applySlotFilters, setFilterDay, setFilterPeriod, rejectAgenda, renderRefused,
   renderQueueHint, doReserveSpecific, doReserve, showReservationState, startReservationTimer,
-  doConfirmFinal, doCancelReserve, doConfirm, showSuccess, resetAll, onCompetitorChange
+  doConfirmFinal, doCancelReserve, showSuccess, resetAll, onCompetitorChange
 } from './sdr.js';
 import { loadMercado, acceptLead, removeLead } from './mercado.js';
 import { switchTab, switchDashTab, setAdminViewMode } from './navigation.js';

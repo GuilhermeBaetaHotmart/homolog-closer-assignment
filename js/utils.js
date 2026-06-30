@@ -23,8 +23,7 @@ export function fmtBRL(v) {
 }
 
 /* Formata valor em R$ compacto — variante usada na animação de login */
-export function fv(v) {
-  if (v >= 1000000) return 'R$ ' + (v / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'M';
+) + 'M';
   if (v >= 1000)    return 'R$ ' + (v / 1000).toFixed(0) + 'k';
   return 'R$ ' + v;
 }
@@ -80,9 +79,5 @@ export function getCloserPhoto(email) {
 }
 
 /* ── Helpers de canvas usados pela animação ───── */
-export function rr2(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
-export function eio2(t){return t<0.5?2*t*t:-1+(4-2*t)*t;}
-export function cl2(v,a,b){return Math.max(a,Math.min(b,v));}
-export function dperson(ctx,px,py,sz,alpha,col,ring){ctx.save();ctx.globalAlpha=cl2(alpha,0,1);if(ring){ctx.beginPath();ctx.arc(px,py,sz,0,Math.PI*2);ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.globalAlpha=cl2(alpha*.55,0,1);ctx.stroke();ctx.globalAlpha=cl2(alpha,0,1);}ctx.beginPath();ctx.arc(px,py-sz*.22,sz*.28,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.beginPath();ctx.arc(px,py+sz*.26,sz*.42,Math.PI*1.1,Math.PI*1.9,false);ctx.fillStyle=col;ctx.fill();ctx.restore();}
+ctx.beginPath();ctx.arc(px,py-sz*.22,sz*.28,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.beginPath();ctx.arc(px,py+sz*.26,sz*.42,Math.PI*1.1,Math.PI*1.9,false);ctx.fillStyle=col;ctx.fill();ctx.restore();}
 
-export function Pt(sx,sy,tx,ty,col,delay,r){this.sx=sx;this.sy=sy;this.tx=tx;this.ty=ty;this.x=sx;this.y=sy;this.color=col;this.delay=delay;this.r=r||4;this.t=0;this.done=false;this.cpx=(sx+tx)/2+(Math.random()-.5)*26;this.cpy=(sy+ty)/2+(Math.random()-.5)*42;}

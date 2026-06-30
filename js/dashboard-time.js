@@ -10,6 +10,8 @@ import { showToast } from './ui.js';
 
 import { session, st } from './state.js';
 
+let timeConfigCache = null;
+
 export async function loadTimeConfig() {
   var grid = document.getElementById('timeDefaultsGrid');
   var sections = document.getElementById('timeClosersSections');
@@ -28,7 +30,7 @@ export async function loadTimeConfig() {
   }
 }
 
-export function renderTimeDefaults(defaults) {
+function renderTimeDefaults(defaults) {
   var grid = document.getElementById('timeDefaultsGrid');
   var segLabels = { SMB: 'N2-N3', MID: 'N4-N5', ENT: 'N6+' };
   var segColors = { SMB: 'var(--yellow)', MID: 'var(--blue)', ENT: 'var(--lilac)' };
@@ -50,7 +52,7 @@ export function renderTimeDefaults(defaults) {
   }).join('');
 }
 
-export function renderTimeClosers(closers) {
+function renderTimeClosers(closers) {
   var sections = document.getElementById('timeClosersSections');
   var segOrder = ['SMB', 'MID', 'ENT'];
   var segLabels = { SMB: 'N2-N3', MID: 'N4-N5', ENT: 'N6+' };

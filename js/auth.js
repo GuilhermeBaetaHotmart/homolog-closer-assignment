@@ -24,7 +24,7 @@ export async function doLogin() {
     const d = await r.json();
     if (d.success) {
       d.role = (d.role || '').toLowerCase().trim();
-      session = d;
+      setSession(d);
       try { localStorage.setItem('ca_session', JSON.stringify(d)); if(d.sessionToken) localStorage.setItem('ca_token', d.sessionToken); } catch(e) {}
       document.getElementById('loginScreen').style.display='none';
       document.getElementById('appScreen').style.display='block';
@@ -40,7 +40,7 @@ export async function doLogin() {
 }
 
 export function doLogout() {
-  session=null;
+  setSession(null);
   try { localStorage.removeItem('ca_session'); localStorage.removeItem('ca_token'); } catch(e) {} resetAll();
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';

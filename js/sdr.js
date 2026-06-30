@@ -10,6 +10,9 @@ import { authFetch } from './auth.js';
 import { showToast } from './ui.js';
 import { markDone, markActive } from './animation.js';
 
+let reservationExpiresAt = null;
+let reservationTimer = null;
+
 
 export async function loadActiveCompetitorsField() {
   var field = document.getElementById('competitorField');
@@ -316,14 +319,14 @@ export async function fetchSlots() {
   } catch(e) { document.getElementById('slotsGrid').innerHTML='<div class="slot-empty">Erro ao buscar agenda: '+e.message+'</div>'; }
 }
 
-export function setLoading() {
+function setLoading() {
   document.getElementById('slotsGrid').innerHTML='<div class="slot-loading"><div class="spinner"></div> Buscando disponibilidade...</div>';
   document.getElementById('btnConfirm').disabled=true;
   document.getElementById('confirmBox').style.display='none';
   st.selectedSlotId=null;
 }
 
-export function updateCalHeader() {
+function updateCalHeader() {
   const mon=getMon(st.weekOffset); const fri=new Date(mon); fri.setDate(mon.getDate()+4);
   const fmt=d=>d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
   document.getElementById('calHead').textContent=fmt(mon)+' – '+fmt(fri);
@@ -586,7 +589,6 @@ export async function doCancelReserve(){
   }
 }
 
-export async function doConfirm(){ /* legacy — não usado */ }
 
 export function showSuccess(data){
   document.getElementById('c1').style.display='none';

@@ -11,6 +11,10 @@ import { toggleCloser } from './closers.js';
 
 import { showToast } from './ui.js';
 
+let currentPeriod = 'all';
+let currentSegment = 'all';
+let chartInstance = null;
+
 export function setPeriod(period, btn) {
   currentPeriod = period;
   document.querySelectorAll('.period-btn').forEach(function(b) { b.classList.remove('active'); });
@@ -53,7 +57,7 @@ export async function loadDashboard(){
   }
 }
 
-export function renderChart(series, period) {
+function renderChart(series, period) {
   var canvas  = document.getElementById('opsChart');
   var emptyEl = document.getElementById('chartEmpty');
   var granEl  = document.getElementById('chartGranLabel');
@@ -125,7 +129,7 @@ export function renderChart(series, period) {
   });
 }
 
-export function renderDashboard(data){
+function renderDashboard(data){
   const closers=data.closers||[]; const history=data.history||[];
   const summary=data.summary||{}; const series=data.series||{};
   const segCls={SMB:'seg-smb',MID:'seg-mid',ENT:'seg-ent'};

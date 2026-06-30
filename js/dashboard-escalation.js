@@ -22,7 +22,7 @@ export async function loadEscalationConfig() {
   }
 }
 
-export function renderEscalationLeaders(leaders) {
+function renderEscalationLeaders(leaders) {
   var gantt = document.getElementById('escalationGantt');
   if (!gantt) return;
   if (!leaders.length) {
