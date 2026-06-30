@@ -10,6 +10,8 @@ import { showToast } from './ui.js';
 
 import { session, st } from './state.js';
 
+const MAX_RANGE_VAL = 50000000;
+
 export async function loadEscalationConfig() {
   var gantt = document.getElementById('escalationGantt');
   if (gantt) gantt.innerHTML = '<div style="font-size:11px;color:var(--txt-3);">Carregando...</div>';
