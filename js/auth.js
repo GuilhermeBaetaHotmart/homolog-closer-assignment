@@ -3,13 +3,11 @@
    ══════════════════════════════════════════════ */
 
 
-import { API } from './api.js';
-import { session, st, setSession } from './state.js';
+import { API, SEGS } from './api.js';
+import { session, setSession, st } from './state.js';
 import { switchTab } from './navigation.js';
 import { loadActiveCompetitorsField, resetAll } from './sdr.js';
 
-import { API, SEGS } from './api.js';
-import { session, st } from './state.js';
 import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
 import { showToast } from './ui.js';
 

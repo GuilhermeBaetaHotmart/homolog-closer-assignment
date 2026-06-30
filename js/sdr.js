@@ -10,10 +10,6 @@ import { authFetch } from './auth.js';
 import { showToast } from './ui.js';
 import { markDone, markActive } from './animation.js';
 
-import { API, SEGS } from './api.js';
-import { session, st } from './state.js';
-import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
-import { showToast } from './ui.js';
 
 export async function loadActiveCompetitorsField() {
   var field = document.getElementById('competitorField');

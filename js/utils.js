@@ -6,7 +6,6 @@
 
 import { SEGS } from './api.js';
 
-import { SEGS } from './api.js';
 
 /* Classifica um valor de cliente em segmento + subgrupo */
 export function classify(v) {

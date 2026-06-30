@@ -3,15 +3,12 @@
    ══════════════════════════════════════════════ */
 
 
-import { API } from './api.js';
-import { fmtBRL } from './utils.js';
+import { API, SEGS } from './api.js';
+import { classify, fmtBRL, getCloserPhoto, getMon } from './utils.js';
 import { authFetch } from './auth.js';
 import { showToast } from './ui.js';
 
-import { API, SEGS } from './api.js';
 import { session, st } from './state.js';
-import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
-import { showToast } from './ui.js';
 
 export async function loadTimeConfig() {
   var grid = document.getElementById('timeDefaultsGrid');

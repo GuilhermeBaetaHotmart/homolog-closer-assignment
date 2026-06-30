@@ -3,7 +3,7 @@
    ══════════════════════════════════════════════ */
 
 
-import { session } from './state.js';
+import { session, st } from './state.js';
 import { setupRole } from './auth.js';
 import { loadDashboard } from './dashboard-core.js';
 import { loadMercado } from './mercado.js';
@@ -14,7 +14,6 @@ import { loadTimeConfig } from './dashboard-time.js';
 import { loadEscalationConfig } from './dashboard-escalation.js';
 
 import { API, SEGS } from './api.js';
-import { session, st } from './state.js';
 import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
 import { showToast } from './ui.js';
 
