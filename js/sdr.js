@@ -620,10 +620,10 @@ export function showSuccess(data){
 }
 
 export function resetAll(){
-  st={rawValue:0,leadId:null,clientEmail:null,segKey:null,subKey:null,subLabel:null,competitor:null,campaignActive:false,
+  Object.assign(st, {rawValue:0,leadId:null,clientEmail:null,segKey:null,subKey:null,subLabel:null,competitor:null,campaignActive:false,
       closerId:null,queue:[],refused:[],weekOffset:0,
       selectedSlotId:null,selectedSlotLabel:null,selectedSlotStart:null,selectedSlotEnd:null,
-      tempEventId:null};
+      tempEventId:null});
   ['leadIdInput','clientEmailInput'].forEach(function(id){ document.getElementById(id).value=''; document.getElementById(id).classList.remove('error'); });
   var compEl = document.getElementById('competitorInput'); if(compEl) { compEl.value=''; compEl.classList.remove('error'); }
   document.getElementById('valInput').value='';
