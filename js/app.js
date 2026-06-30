@@ -80,3 +80,18 @@ document.getElementById('loginBtn').addEventListener('click', doLogin);
 document.getElementById('loginPassword').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') doLogin();
 });
+
+// Listener do campo de valor — formata e classifica em tempo real
+document.getElementById('valInput').addEventListener('input', function(){
+  var cursor = this.selectionStart;
+  var raw = this.value.replace(/\D/g,'');
+  st.rawValue = parseInt(raw) || 0;
+  var formatted = st.rawValue > 0 ? st.rawValue.toLocaleString('pt-BR') : '';
+  var oldVal = this.value;
+  var oldSeps = (oldVal.slice(0, cursor).match(/\./g)||[]).length;
+  this.value = formatted;
+  var newSeps = (formatted.slice(0, cursor).match(/\./g)||[]).length;
+  var newCursor = cursor + (newSeps - oldSeps);
+  try { this.setSelectionRange(newCursor, newCursor); } catch(e){}
+  updateTag();
+});
