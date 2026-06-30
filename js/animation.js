@@ -2,11 +2,8 @@
    animation.js — Animações decorativas
    Animação de fundo do login (partículas) e
    animação de "escolhendo o closer" do algoritmo.
-   Autocontido — não depende de outros módulos
-   de negócio, só de utils.js para helpers de canvas.
+   Autocontido — não depende de outros módulos.
    ══════════════════════════════════════════════ */
-
-import { rr2, eio2, cl2, dperson, Pt } from './utils.js';
 
 /* ── Animação de fundo da tela de login ───────── */
 (function() {
@@ -148,13 +145,7 @@ window.startAlgoAnimation=function(segKey,subKey,value,onDone){
   }
   loop2();
 };
-})();
 
-function getMon(offset){
-  var now=new Date(); var day=now.getDay();
-  var mon=new Date(now); mon.setDate(now.getDate()-(day===0?6:day-1)+offset*7);
-  return mon;
-}
 function markDone(bid,lid){
   var b=document.getElementById(bid); b.className='step-dot done';
   b.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
