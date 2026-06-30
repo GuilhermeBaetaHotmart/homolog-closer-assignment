@@ -1,168 +1,666 @@
 /* ══════════════════════════════════════════════
-   animation.js — Animações decorativas
-   Animação de fundo do login (partículas) e
-   animação de "escolhendo o closer" do algoritmo.
-   Autocontido — não depende de outros módulos
-   de negócio, só de utils.js para helpers de canvas.
+   sdr.js — Fluxo "Nova Oportunidade" — passos 1 a 3. Equivalente aos Fluxos 1, 3, 4, 5, 6, 12.
    ══════════════════════════════════════════════ */
 
-import { rr2, eio2, cl2, dperson, Pt } from './utils.js';
 
-/* ── Animação de fundo da tela de login ───────── */
-(function() {
-  var cv = document.getElementById('loginCanvas');
-  if (!cv) return;
-  var cx = cv.getContext('2d');
-  var W, H, nodes, raf;
-  function resize() { W = cv.width = innerWidth; H = cv.height = innerHeight; }
-  function init() {
-    nodes = [];
-    for (var i = 0; i < 55; i++) {
-      nodes.push({ x: Math.random()*W, y: Math.random()*H,
-                   vx: (Math.random()-.5)*.35, vy: (Math.random()-.5)*.35,
-                   r: Math.random()*1.8+.8 });
+import { API, SEGS } from './api.js';
+import { session, st } from './state.js';
+import { classify, fmtBRL, getCloserPhoto, getMon } from './utils.js';
+import { authFetch } from './auth.js';
+import { showToast } from './ui.js';
+import { markDone, markActive } from './animation.js';
+
+import { API, SEGS } from './api.js';
+import { session, st } from './state.js';
+import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
+import { showToast } from './ui.js';
+
+export async function loadActiveCompetitorsField() {
+  var field = document.getElementById('competitorField');
+  var select = document.getElementById('competitorInput');
+  if (!field || !select) return;
+
+  try {
+    const r = await authFetch(API.campaignsGet);
+    const d = await r.json();
+    const campaigns = d.campaigns || [];
+    const active = campaigns.filter(function(c) { return c.active; });
+
+    if (!active.length) {
+      field.style.display = 'none';
+      select.removeAttribute('required');
+      st.competitor = null;
+      return;
     }
+
+    field.style.display = '';
+    var html = '<option value="">Selecione o concorrente</option>';
+    active.forEach(function(c) {
+      html += '<option value="' + c.name + '">' + c.name + '</option>';
+    });
+    html += '<option value="Other">Outro</option>';
+    select.innerHTML = html;
+  } catch(e) {
+    // Em caso de erro, mantém o campo oculto por segurança (evita exigir campo que pode estar quebrado)
+    field.style.display = 'none';
   }
-  function draw() {
-    cx.clearRect(0,0,W,H);
-    for (var i=0;i<nodes.length;i++) {
-      for (var j=i+1;j<nodes.length;j++) {
-        var dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y;
-        var d=Math.sqrt(dx*dx+dy*dy);
-        if (d<130) {
-          cx.beginPath();
-          cx.strokeStyle='rgba(255,72,0,'+(0.16*(1-d/130))+')';
-          cx.lineWidth=.5;
-          cx.moveTo(nodes[i].x,nodes[i].y);
-          cx.lineTo(nodes[j].x,nodes[j].y);
-          cx.stroke();
-        }
+}
+
+export function updateTag() {
+  const r=classify(st.rawValue);
+  const el=document.getElementById('segTag');
+  const btn=document.getElementById('btnS1');
+  if (r&&st.rawValue>0) {
+    const seg=SEGS[r.segKey];
+    el.innerHTML='<span class="seg-badge '+seg.cls+'">'+seg.label+' &nbsp;·&nbsp; '+r.subLabel+'</span>';
+    btn.disabled=false;
+  } else {
+    el.innerHTML='<span class="seg-badge seg-none">Aguardando valor para classificar</span>';
+    btn.disabled=true;
+  }
+}
+
+export async function goStep2() {
+  const lid=document.getElementById('leadIdInput').value.trim();
+  if (!lid) { document.getElementById('leadIdError').style.display='block'; document.getElementById('leadIdInput').classList.add('error'); return; }
+  document.getElementById('leadIdError').style.display='none'; document.getElementById('leadIdInput').classList.remove('error');
+  var competitorFieldVisible = document.getElementById('competitorField').style.display !== 'none';
+  const competitor = document.getElementById('competitorInput').value.trim();
+  if (competitorFieldVisible && !competitor) { document.getElementById('competitorError').style.display='block'; document.getElementById('competitorInput').classList.add('error'); return; }
+  document.getElementById('competitorError').style.display='none'; document.getElementById('competitorInput').classList.remove('error');
+  st.competitor = competitorFieldVisible ? competitor : null;
+  const cem=document.getElementById('clientEmailInput').value.trim();
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cem);
+  if (!cem || !emailOk) {
+    document.getElementById('clientEmailError').textContent = cem ? 'E-mail inválido' : 'Campo obrigatório';
+    document.getElementById('clientEmailError').style.display='block';
+    document.getElementById('clientEmailInput').classList.add('error'); return;
+  }
+  document.getElementById('clientEmailError').style.display='none'; document.getElementById('clientEmailInput').classList.remove('error');
+  const r=classify(st.rawValue); if(!r) return;
+  st.leadId=lid; st.clientEmail=cem; st.segKey=r.segKey; st.subKey=r.subKey; st.subLabel=r.subLabel;
+  st.refused=[]; st.weekOffset=0; st.selectedSlotId=null;
+  document.getElementById('noAvailBanner').classList.remove('show');
+  markDone('b1','l1'); markActive('b2','l2');
+  document.getElementById('conn1').classList.add('done');
+  document.getElementById('c1').classList.add('dimmed');
+
+  // Show animation, keep c2 hidden
+  document.getElementById('algoAnim').style.display='block';
+  document.getElementById('c2').style.display='none';
+  await new Promise(function(res){ setTimeout(res, 50); });
+
+  // Run fetch and animation in parallel — show c2 when BOTH finish
+  var fetchPromise = fetchCloser();
+  var animPromise = new Promise(function(res){
+    startAlgoAnimation(st.segKey, st.subKey, st.rawValue, res);
+  });
+
+  await Promise.all([animPromise, fetchPromise]);
+  document.getElementById('algoAnim').style.display='none';
+  if (st.noAvailability) {
+    document.getElementById('c1').classList.remove('dimmed');
+    document.getElementById('noAvailBanner').classList.add('show');
+    document.getElementById('slotsGrid').innerHTML='';
+    return;
+  }
+  // modo specific_date: já foi pro Step 3 via doReserveSpecific, não abre c2
+  if (st.useSpecificSlot && st.specificSlotStart) return;
+  document.getElementById('c2').style.display='';
+  document.getElementById('c2').classList.remove('dimmed');
+  document.getElementById('anonSub').textContent=SEGS[st.segKey].label+' · '+st.subLabel;
+  // No modo specific_date não faz sentido pular para próximo closer
+  var btnReject = document.getElementById('btnRejectAgenda');
+  if (btnReject) btnReject.style.display = (st.useSpecificSlot && st.specificSlotStart) ? 'none' : '';
+}
+
+export function toggleSlotPicker() {
+  st.useSpecificSlot = !st.useSpecificSlot;
+  const track = document.getElementById('slotToggleTrack');
+  const picker = document.getElementById('slotPicker');
+  const banner = document.getElementById('noAvailBanner');
+  track.classList.toggle('on', st.useSpecificSlot);
+  picker.classList.toggle('open', st.useSpecificSlot);
+  banner.classList.remove('show');
+  if (!st.useSpecificSlot) {
+    document.getElementById('slotDate').value = '';
+    document.getElementById('slotTime').value = '';
+    st.specificSlotStart = null;
+  }
+}
+
+export function validateSlotPicker() {
+  const date = document.getElementById('slotDate').value;
+  const time = document.getElementById('slotTime').value;
+  const banner = document.getElementById('noAvailBanner');
+  const noAvailTitle = document.getElementById('noAvailTitle');
+
+  if (date && time) {
+    st.specificSlotStart = date + 'T' + time + ':00-03:00';
+
+    // Verifica se está fora da janela 08h–17h BRT
+    const [h, m] = time.split(':').map(Number);
+    const totalMin = h * 60 + m;
+    const windowStart = 10 * 60;  // 10:00
+    const windowEnd   = 17 * 60;  // 17:00
+
+    if (totalMin < windowStart || totalMin >= windowEnd) {
+      noAvailTitle.textContent = 'Horário fora da janela de atendimento (10h–17h) — lead irá ao Mercado';
+      banner.classList.add('show');
+    } else {
+      banner.classList.remove('show');
+      noAvailTitle.textContent = 'Nenhum closer disponível neste horário';
+    }
+  } else {
+    st.specificSlotStart = null;
+    banner.classList.remove('show');
+    noAvailTitle.textContent = 'Nenhum closer disponível neste horário';
+  }
+}
+
+export function clearSlotAndRetry() {
+  st.useSpecificSlot = false;
+  st.specificSlotStart = null;
+  document.getElementById('slotToggleTrack').classList.remove('on');
+  document.getElementById('slotPicker').classList.remove('open');
+  document.getElementById('noAvailBanner').classList.remove('show');
+  document.getElementById('slotDate').value = '';
+  document.getElementById('slotTime').value = '';
+  fetchCloser();
+}
+
+export async function goEmergencyPool() {
+  try {
+    // Só verifica disponibilidade se há um horário específico selecionado
+    if (st.specificSlotStart) {
+      showToast('Verificando disponibilidade...', 'info', 3000);
+      const checkPayload = {
+        lead_id:     st.leadId,
+        clientValue: st.rawValue,
+        segmentKey:  st.segKey,
+        subgroupKey: st.subKey,
+        mode:        'specific_date',
+        slotStart:   st.specificSlotStart
+      };
+      const checkRes = await authFetch(API.algorithm, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(checkPayload)
+      });
+      const checkData = await checkRes.json();
+
+      // Se encontrou closer disponível, bloqueia mercado e atribui
+      if (!checkData.no_availability && checkData.closerId) {
+        document.getElementById('noAvailBanner').classList.remove('show');
+        showToast('Closer disponível encontrado — redirecionando para agendamento.', 'info', 5000);
+        st.closerId   = checkData.closerId;
+        st.closerName = checkData.closerName || '';
+        st.queue      = checkData.queue || [];
+        st.noAvailability = false;
+        await doReserveSpecific();
+        return;
       }
-      cx.beginPath();
-      cx.arc(nodes[i].x,nodes[i].y,nodes[i].r,0,Math.PI*2);
-      cx.fillStyle='rgba(255,72,0,.45)';
-      cx.fill();
-      nodes[i].x+=nodes[i].vx; nodes[i].y+=nodes[i].vy;
-      if(nodes[i].x<0||nodes[i].x>W) nodes[i].vx*=-1;
-      if(nodes[i].y<0||nodes[i].y>H) nodes[i].vy*=-1;
     }
-    raf=requestAnimationFrame(draw);
-  }
-  resize(); init(); draw();
-  window.addEventListener('resize', function(){ resize(); init(); });
-})();
 
-/* ── Animação "escolhendo o closer" (algoritmo) ── */
-var aRaf=null;
-var ALGO_CFGS={
-  SMB:{color:'#FFD450',label:'N2-N3',subs:['Grupo 1\n100–300k','Grupo 2\n300–600k','Grupo 3\n600k+']},
-  MID:{color:'#44D0FF',label:'N4-N5',subs:['Grupo 1\n1M–2M','Grupo 2\n2M–3M','Grupo 3\n3M+']},
-  ENT:{color:'#B48EFF',label:'N6+',  subs:['Grupo 1\n5M–10M','Grupo 2\n10–20M','Grupo 3\n20M+']}
-};
-var SUB_IDX={'SMB-1':0,'SMB-2':1,'SMB-3':2,'MID-1':0,'MID-2':1,'MID-3':2,'ENT-1':0,'ENT-2':1,'ENT-3':2};
-function rr2(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
-function eio2(t){return t<0.5?2*t*t:-1+(4-2*t)*t;}
-function cl2(v,a,b){return Math.max(a,Math.min(b,v));}
-function Pt(sx,sy,tx,ty,col,delay,r){this.sx=sx;this.sy=sy;this.tx=tx;this.ty=ty;this.x=sx;this.y=sy;this.color=col;this.delay=delay;this.r=r||4;this.t=0;this.done=false;this.cpx=(sx+tx)/2+(Math.random()-.5)*26;this.cpy=(sy+ty)/2+(Math.random()-.5)*42;}
-Pt.prototype.step=function(){if(this.delay>0){this.delay--;return;}this.t=Math.min(1,this.t+0.022);var e=eio2(this.t);this.x=(1-e)*(1-e)*this.sx+2*(1-e)*e*this.cpx+e*e*this.tx;this.y=(1-e)*(1-e)*this.sy+2*(1-e)*e*this.cpy+e*e*this.ty;if(this.t>=1)this.done=true;};
-Pt.prototype.draw=function(ctx){var a=this.t<0.15?this.t/0.15:this.t>0.8?(1-this.t)/0.2:1;ctx.save();ctx.globalAlpha=cl2(a,0,1)*0.88;ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.fillStyle=this.color;ctx.fill();ctx.restore();};
-function dperson(ctx,px,py,sz,alpha,col,ring){ctx.save();ctx.globalAlpha=cl2(alpha,0,1);if(ring){ctx.beginPath();ctx.arc(px,py,sz,0,Math.PI*2);ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.globalAlpha=cl2(alpha*.55,0,1);ctx.stroke();ctx.globalAlpha=cl2(alpha,0,1);}ctx.beginPath();ctx.arc(px,py-sz*.22,sz*.28,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.beginPath();ctx.arc(px,py+sz*.26,sz*.42,Math.PI*1.1,Math.PI*1.9,false);ctx.fillStyle=col;ctx.fill();ctx.restore();}
-function fv(v){if(v>=1000000)return'R$ '+(v/1000000).toLocaleString('pt-BR',{maximumFractionDigits:1})+'M';if(v>=1000)return'R$ '+(v/1000).toFixed(0)+'k';return'R$ '+v;}
-
-window.startAlgoAnimation=function(segKey,subKey,value,onDone){
-  var isLight = document.body.classList.contains('light');
-  var textColor = isLight ? '#1A1828' : '#F0EDF8';
-  var subTextColor = isLight ? '#4A4760' : '#A8A4BF';
-  var bgCard = isLight ? 'rgba(240,238,248,0.6)' : 'rgba(0,0,0,0)';
-
-  if(aRaf)cancelAnimationFrame(aRaf);
-  var cv2=document.getElementById('algoCanvas');if(!cv2)return;
-  var ctx=cv2.getContext('2d');
-  var AW=620,AH=260;
-  var cfg2=ALGO_CFGS[segKey],tSub=SUB_IDX[subKey]||0,c=cfg2.color;
-  var frame2=0,parts2=[],persons2=[];
-  var P2={segFade:0,subFade:0,qFade:0,winReveal:0,onDone:onDone||null};
-  var SX2=8,SY2=106,SW2=100,SH2=48;
-  var GX2=156,GY2=106,GW2=108,GH2=48;
-  var BX2=318,BW2=88,BH2=30,BY2=[58,120,182];
-  var QX2=456,QY2=106,QW2=108,QH2=48;
-  var nC=segKey==='SMB'?4:segKey==='MID'?2:1;
-  var winner=Math.floor(Math.random()*nC);
-  function initP2(){
-    var sp=nC===1?0:Math.min(38,(QW2-24)/(nC-1));
-    var sx2=QX2+QW2/2-(nC-1)*sp/2;
-    var cy2=QY2+20+(QH2-20)/2;
-    var order=[...Array(nC).keys()].sort(function(){return Math.random()-.5;});
-    persons2=Array.from({length:nC},function(_,i){return{x:sx2+order[i]*sp,tx:sx2+order[i]*sp,y:cy2,alpha:0,isWin:i===winner,bob:Math.random()*Math.PI*2,cy2:cy2};});
-  }
-  function shuf2(t){
-    if(nC<=1)return;
-    var sp=Math.min(38,(QW2-24)/(nC-1));var sx2=QX2+QW2/2-(nC-1)*sp/2;
-    if(t<0.55){if(Math.floor(t*12)!==Math.floor((t-0.025)*12)){var ord=[...Array(nC).keys()].sort(function(){return Math.random()-.5;});persons2.forEach(function(p,i){p.tx=sx2+ord[i]*sp;});}}
-    else{var sl=0;persons2.forEach(function(p){if(!p.isWin){p.tx=sx2+sl*sp;sl++;}});persons2.forEach(function(p){if(p.isWin)p.tx=QX2+QW2/2;});}
-  }
-  function rend2(){
-    ctx.clearRect(0,0,AW,AH);
-    rr2(ctx,SX2,SY2,SW2,SH2,7);ctx.fillStyle='rgba(255,72,0,0.09)';ctx.fill();ctx.strokeStyle='#FF4800';ctx.lineWidth=1.5;ctx.stroke();
-    ctx.font='500 10px var(--font-sans,sans-serif)';ctx.fillStyle=c;ctx.textAlign='center';
-    ctx.fillText('Amount 12m',SX2+SW2/2,SY2+SH2/2-8);ctx.fillText(fv(value),SX2+SW2/2,SY2+SH2/2+7);
-    if(P2.segFade>0){
-      ctx.save();ctx.globalAlpha=P2.segFade;rr2(ctx,GX2,GY2,GW2,GH2,7);ctx.fillStyle=c+'1A';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=1.5;ctx.stroke();
-      ctx.font='600 11px var(--font-sans,sans-serif)';ctx.fillStyle=c;ctx.textAlign='center';ctx.fillText(cfg2.label,GX2+GW2/2,GY2+GH2/2-7);
-      ctx.font='9px var(--font-sans,sans-serif)';ctx.globalAlpha=P2.segFade*.5;ctx.fillText('segmento identificado',GX2+GW2/2,GY2+GH2/2+8);ctx.restore();
-      ctx.save();ctx.globalAlpha=P2.segFade*.28;ctx.beginPath();ctx.moveTo(SX2+SW2,SY2+SH2/2);ctx.lineTo(GX2,GY2+GH2/2);ctx.strokeStyle=c;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.stroke();ctx.restore();
+    // Sem closer disponível ou sem horário específico — vai direto pro pool
+    const payload = {
+      leadId:      st.leadId,
+      clientValue: st.rawValue,
+      subgroup:    st.subKey,
+      slotStart:   st.specificSlotStart || '',
+      sdrEmail:    session ? session.email : ''
+    };
+    const r = await authFetch(API.poolAdd, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.success !== false) {
+      document.getElementById('noAvailBanner').classList.remove('show');
+      showToast('Lead enviado ao Emergency Pool. Closers serão notificados.', 'success', 5000);
+    } else {
+      showToast('Erro ao enviar para o pool.', 'error', 4000);
     }
-    if(P2.subFade>0){
-      cfg2.subs.forEach(function(lbl,i){
-        var isTgt=i===tSub,y=BY2[i];
-        ctx.save();ctx.globalAlpha=P2.subFade*(isTgt?1:.32);rr2(ctx,BX2,y,BW2,BH2,5);ctx.fillStyle=isTgt?c+'18':'rgba(255,255,255,0.03)';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=isTgt?1.5:.5;ctx.stroke();
-        var ln=lbl.split('\n');ctx.font=(isTgt?'600 ':'400 ')+'10px var(--font-sans,sans-serif)';ctx.fillStyle=c;ctx.textAlign='center';ctx.fillText(ln[0],BX2+BW2/2,y+BH2/2-6);ctx.font='8px var(--font-sans,sans-serif)';ctx.globalAlpha*=.65;ctx.fillText(ln[1],BX2+BW2/2,y+BH2/2+6);ctx.restore();
-        ctx.save();ctx.globalAlpha=P2.subFade*(isTgt?.35:.1);ctx.beginPath();ctx.moveTo(GX2+GW2,GY2+GH2/2);ctx.bezierCurveTo(GX2+GW2+22,GY2+GH2/2,GX2+GW2+22,y+BH2/2,BX2,y+BH2/2);ctx.strokeStyle=c;ctx.lineWidth=isTgt?1:.5;ctx.setLineDash([3,4]);ctx.stroke();ctx.restore();
-      });
-    }
-    if(P2.qFade>0){
-      ctx.save();ctx.globalAlpha=P2.qFade;rr2(ctx,QX2,QY2,QW2,QH2,7);ctx.fillStyle=c+'0E';ctx.fill();ctx.strokeStyle=c;ctx.lineWidth=1.5;ctx.setLineDash([]);ctx.stroke();ctx.restore();
-      var lA=P2.winReveal>0.6?cl2(1-(P2.winReveal-.6)/.4,0,1):1;
-      ctx.save();ctx.globalAlpha=P2.qFade*lA*.55;ctx.font='500 9px var(--font-sans,sans-serif)';ctx.fillStyle=c;ctx.textAlign='center';ctx.fillText('selecionando',QX2+QW2/2,QY2+13);ctx.restore();
-      if(P2.winReveal>0.6){ctx.save();ctx.globalAlpha=((P2.winReveal-.6)/.4)*P2.qFade;ctx.font='500 9px var(--font-sans,sans-serif)';ctx.fillStyle=c;ctx.textAlign='center';ctx.fillText('closer selecionado',QX2+QW2/2,QY2+13);ctx.restore();}
-      ctx.save();ctx.globalAlpha=P2.qFade*.28;ctx.beginPath();ctx.moveTo(BX2+BW2,BY2[tSub]+BH2/2);ctx.lineTo(QX2,QY2+QH2/2);ctx.strokeStyle=c;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.stroke();ctx.restore();
-      persons2.forEach(function(p){
-        var isWin=p.isWin&&P2.winReveal>0.35;var col2=isWin?c:'rgba(130,130,148,0.5)';
-        var a=p.alpha;if(P2.winReveal>0.35&&!p.isWin)a*=cl2(1-(P2.winReveal-.35)*2,0,1);
-        dperson(ctx,p.x,p.y,10,cl2(a,0,1),col2,isWin);
-      });
-    }
-    parts2.forEach(function(p){p.draw(ctx);});
+  } catch(e) {
+    showToast('Erro: ' + e.message, 'error', 4000);
   }
-  function loop2(){
-    frame2++;
-    if(frame2===45){for(var i=0;i<13;i++)parts2.push(new Pt(SX2+SW2/2,SY2+SH2/2,GX2+10+Math.random()*(GW2-20),GY2+8+Math.random()*(GH2-16),c,i*16));}
-    if(frame2>=45&&frame2<148){P2.segFade=cl2(P2.segFade+0.038,0,1);parts2.forEach(function(p){p.step();});if(frame2===147)parts2=[];}
-    if(frame2===170){var gx3=GX2+GW2/2,gy3=GY2+GH2/2;cfg2.subs.forEach(function(_,i){var isTgt=i===tSub,cnt=isTgt?12:4;for(var j=0;j<cnt;j++){var p=new Pt(gx3,gy3,BX2+8+Math.random()*(BW2-16),BY2[i]+4+Math.random()*(BH2-8),c,j*15+(isTgt?0:55),isTgt?4:2.5);parts2.push(p);}});}
-    if(frame2>=148&&frame2<290){P2.subFade=cl2(P2.subFade+0.032,0,1);parts2.forEach(function(p){p.step();});if(frame2===289)parts2=[];}
-    if(frame2===300)initP2();
-    if(frame2>=300){P2.qFade=cl2(P2.qFade+0.04,0,1);persons2.forEach(function(p){p.alpha=cl2(p.alpha+0.05,0,1);p.x+=(p.tx-p.x)*0.09;p.y=p.cy2+Math.sin(frame2*.09+p.bob)*Math.max(0,1-P2.winReveal*3)*2.5;});shuf2(cl2((frame2-300)/260,0,1));if(frame2>520)P2.winReveal=cl2(P2.winReveal+0.015,0,1);}
-    rend2();
-    if(frame2<750)aRaf=requestAnimationFrame(loop2);
-    else { rend2(); if(typeof P2.onDone==='function') P2.onDone(); }
-  }
-  loop2();
-};
-})();
-
-function getMon(offset){
-  var now=new Date(); var day=now.getDay();
-  var mon=new Date(now); mon.setDate(now.getDate()-(day===0?6:day-1)+offset*7);
-  return mon;
-}
-function markDone(bid,lid){
-  var b=document.getElementById(bid); b.className='step-dot done';
-  b.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-  document.getElementById(lid).className='step-label';
-}
-function markActive(bid,lid){
-  document.getElementById(bid).className='step-dot active';
-  document.getElementById(lid).className='step-label active';
 }
 
-export { markDone, markActive };
+export async function fetchCloser() {
+  setLoading();
+  document.getElementById('noAvailBanner').classList.remove('show');
+
+  try {
+    console.log('[DEBUG fetchCloser] useSpecificSlot:', st.useSpecificSlot, '| specificSlotStart:', st.specificSlotStart);
+    const payload = {
+      lead_id: st.leadId,
+      clientValue: st.rawValue,
+      segmentKey: st.segKey,
+      subgroupKey: st.subKey,
+      mode: (st.useSpecificSlot && st.specificSlotStart) ? 'specific_date' : 'schedule',
+      competitor: st.competitor || ''
+    };
+    if (payload.mode === 'specific_date') payload.slotStart = st.specificSlotStart;
+    const r=await authFetch(API.algorithm,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json(); if(d.error) throw new Error(d.error);
+    if (d.no_availability || d.fallback === 'emergency') {
+      st.noAvailability = true;
+      // Atualiza título do banner conforme o motivo
+      var title = document.getElementById('noAvailTitle');
+      if (title) {
+        title.textContent = d.fallback === 'emergency'
+          ? 'Nenhum closer disponível neste segmento'
+          : 'Nenhum closer disponível neste horário';
+      }
+      return;
+    }
+    st.noAvailability = false;
+    st.closerId=d.closerId; st.closerName=d.closerName||''; st.queue=d.queue||[];
+    st.campaignActive = d.campaignActive || false;
+    console.log('[DEBUG] useSpecificSlot:', st.useSpecificSlot, 'specificSlotStart:', st.specificSlotStart);
+    if (st.useSpecificSlot && st.specificSlotStart) {
+      console.log('[DEBUG] chamando doReserveSpecific');
+      await doReserveSpecific();
+    } else {
+      console.log('[DEBUG] chamando fetchSlots');
+      await fetchSlots();
+    }
+  } catch(e) {
+    st.noAvailability = false;
+    document.getElementById('slotsGrid').innerHTML='<div class="slot-empty">Erro ao buscar closer: '+e.message+'</div>';
+  }
+}
+
+export async function fetchSlots() {
+  setLoading(); updateCalHeader();
+  try {
+    const r=await authFetch(API.slots,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({closerId:st.closerId,weekOffset:st.weekOffset})});
+    const raw=await r.json();
+    const d = Array.isArray(raw) ? raw[0] : raw;
+    if(d.error) throw new Error(d.error);
+    var allSlots = (d.slots||[]).map(function(s){
+      // displayStart é o horário de reunião (sem o tempo de preparação); start/end (slotStart/slotEnd)
+      // são o bloco total reservado de fato, usados no /reserve.
+      var displayStartRaw = s.displayStart || s.slotStart;
+      var displayStart = new Date(displayStartRaw);
+      var end   = new Date(s.slotEnd);
+      var opts  = {timeZone:'America/Sao_Paulo'};
+      var dateStr = displayStart.toLocaleDateString('pt-BR',Object.assign({},opts,{day:'2-digit',month:'2-digit'}));
+      var timeStr = displayStart.toLocaleTimeString('pt-BR',Object.assign({},opts,{hour:'2-digit',minute:'2-digit',hour12:false}));
+      var endStr  = end.toLocaleTimeString('pt-BR',Object.assign({},opts,{hour:'2-digit',minute:'2-digit',hour12:false}));
+      var weekdayFull = displayStart.toLocaleDateString('pt-BR',Object.assign({},opts,{weekday:'long'})).toLowerCase();
+      var weekdayShort = displayStart.toLocaleDateString('pt-BR',Object.assign({},opts,{weekday:'short'}));
+      var hourBRT = parseInt(displayStart.toLocaleTimeString('pt-BR',Object.assign({},opts,{hour:'2-digit',hour12:false})));
+      if (hourBRT < 10 || hourBRT > 17) return null;
+      var period = hourBRT < 12 ? 'manha' : 'tarde';
+      var dayKey = weekdayFull.startsWith('seg') ? 'seg' :
+                   weekdayFull.startsWith('ter') ? 'ter' :
+                   weekdayFull.startsWith('qua') ? 'qua' :
+                   weekdayFull.startsWith('qui') ? 'qui' :
+                   weekdayFull.startsWith('sex') ? 'sex' : 'other';
+      return {
+        id:      s.slotId,
+        start:   s.slotStart,
+        end:     s.slotEnd,
+        day:     weekdayShort,
+        date:    dateStr,
+        time:    timeStr + ' – ' + endStr,
+        label:   dateStr + ' ' + timeStr + (s.type==='slot' ? ' (Slot)' : ''),
+        type:    s.type,
+        dayKey:  dayKey,
+        period:  period
+      };
+    });
+    st.allSlots = allSlots.filter(function(s){ return s !== null; });
+    st.filterDay = st.filterDay || 'all';
+    st.filterPeriod = st.filterPeriod || 'all';
+
+    applySlotFilters(); renderRefused(); renderQueueHint();
+  } catch(e) { document.getElementById('slotsGrid').innerHTML='<div class="slot-empty">Erro ao buscar agenda: '+e.message+'</div>'; }
+}
+
+export function setLoading() {
+  document.getElementById('slotsGrid').innerHTML='<div class="slot-loading"><div class="spinner"></div> Buscando disponibilidade...</div>';
+  document.getElementById('btnConfirm').disabled=true;
+  document.getElementById('confirmBox').style.display='none';
+  st.selectedSlotId=null;
+}
+
+export function updateCalHeader() {
+  const mon=getMon(st.weekOffset); const fri=new Date(mon); fri.setDate(mon.getDate()+4);
+  const fmt=d=>d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+  document.getElementById('calHead').textContent=fmt(mon)+' – '+fmt(fri);
+}
+
+export function renderSlots(slots) {
+  const g=document.getElementById('slotsGrid');
+  if (!slots.length) { g.innerHTML='<div class="slot-empty">Sem slots disponíveis nesta semana.</div>'; return; }
+  g.innerHTML='';
+  slots.forEach(function(s){
+    const btn=document.createElement('button');
+    var isSlot = s.type === 'slot';
+    btn.className='slot-btn' + (isSlot ? ' is-slot' : ''); btn.setAttribute('role','listitem');
+    btn.innerHTML=
+      '<span class="slot-badge ' + (isSlot ? 'slot-badge-slot' : 'slot-badge-free') + '">' + (isSlot ? 'Slot' : 'Janela livre') + '</span>' +
+      '<span class="slot-day">'+s.day+' '+s.date+'</span>' +
+      '<span class="slot-time">'+s.time+'</span>';
+    btn.onclick=function(){ selectSlot(btn,s); };
+    g.appendChild(btn);
+  });
+}
+
+export function selectSlot(el,s) {
+  document.querySelectorAll('.slot-btn').forEach(function(b){ b.classList.remove('selected'); });
+  el.classList.add('selected');
+  st.selectedSlotId=s.id; st.selectedSlotLabel=s.label;
+  st.selectedSlotStart=s.start; st.selectedSlotEnd=s.end;
+  document.getElementById('cfLeadId').textContent=st.leadId||'—';
+  document.getElementById('cfClientEmail').textContent=st.clientEmail||'—';
+  document.getElementById('cfSeg').textContent=SEGS[st.segKey].label;
+  document.getElementById('cfSub').textContent=st.subLabel;
+  document.getElementById('cfSlot').textContent=s.label;
+  document.getElementById('cfVal').textContent=fmtBRL(st.rawValue);
+  document.getElementById('confirmBox').style.display='block';
+  document.getElementById('btnConfirm').disabled=false;
+}
+
+export function applySlotFilters() {
+  var filtered = (st.allSlots || []).filter(function(s) {
+    if (st.filterDay !== 'all' && s.dayKey !== st.filterDay) return false;
+    if (st.filterPeriod !== 'all' && s.period !== st.filterPeriod) return false;
+    return true;
+  });
+  renderSlots(filtered);
+}
+
+export function setFilterDay(val, btn) {
+  st.filterDay = val;
+  document.querySelectorAll('#filterDayBtns .filter-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  applySlotFilters();
+}
+
+export function setFilterPeriod(val, btn) {
+  st.filterPeriod = val;
+  btn.closest('.slots-filter-btns').querySelectorAll('.filter-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  applySlotFilters();
+}
+
+export async function rejectAgenda(){
+  if(!st.queue.length){ alert('Não há mais closers disponíveis neste segmento.'); return; }
+  // Registra o pulo antes de trocar o closer
+  try {
+    await authFetch(API.skip, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sdrEmail:         session ? session.email : '',
+        skippedCloserId:  st.closerId,
+        slots:            st.allSlots || []
+      })
+    });
+  } catch(e) {
+    console.warn('[skip] Erro ao registrar pulo:', e.message);
+  }
+  st.refused.push(st.closerId); st.closerId=st.queue.shift(); st.weekOffset=0;
+  fetchSlots(); renderRefused(); renderQueueHint();
+}
+
+export function renderRefused(){
+  const log=document.getElementById('refusedLog'); const items=document.getElementById('refusedItems');
+  if(!st.refused.length){ log.style.display='none'; return; }
+  log.style.display='block';
+  items.innerHTML=st.refused.map(function(_,i){ return '<div class="refused-item">→ Closer '+(i+1)+' — agenda indisponível</div>'; }).join('');
+}
+
+export function renderQueueHint(){
+  const el=document.getElementById('queueInfo');
+  el.textContent=st.queue.length>0?'↻ '+st.queue.length+' closer(s) na fila':'';
+}
+
+export async function doReserveSpecific() {
+  // Monta slotEnd = slotStart + 1h30
+  const start = new Date(st.specificSlotStart);
+  const end = new Date(start.getTime() + 90 * 60 * 1000);
+  st.selectedSlotId    = 'specific_' + start.toISOString();
+  st.selectedSlotStart = st.specificSlotStart;
+  st.selectedSlotEnd   = end.toISOString();
+  st.selectedSlotLabel = start.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'short', day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit'
+  });
+  try {
+    const res = await authFetch(API.reserve, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        closerId:    st.closerId,
+        slotId:      st.selectedSlotId,
+        slotStart:   st.selectedSlotStart,
+        slotEnd:     st.selectedSlotEnd,
+        leadId:      st.leadId,
+        clientEmail: st.clientEmail,
+        clientValue: st.rawValue,
+        segmentKey:  st.segKey,
+        subgroupKey: st.subKey,
+        sdrEmail:    session ? session.email : '',
+        ts:          new Date().toISOString()
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    showReservationState(data);
+  } catch(e) {
+    showToast('Erro ao reservar: ' + e.message, 'error', 5000);
+  }
+}
+
+export async function doReserve(){
+  const btn = document.getElementById('btnConfirm');
+  btn.disabled = true; btn.textContent = 'Reservando...';
+  try {
+    const res = await authFetch(API.reserve, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        closerId:    st.closerId,
+        slotId:      st.selectedSlotId,
+        slotStart:   st.selectedSlotStart,
+        slotEnd:     st.selectedSlotEnd,
+        leadId:      st.leadId,
+        clientEmail: st.clientEmail,
+        clientValue: st.rawValue,
+        segmentKey:  st.segKey,
+        subgroupKey: st.subKey,
+        sdrEmail:    session ? session.email : '',
+        ts:          new Date().toISOString()
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    showReservationState(data);
+  } catch(e) {
+    showToast('Erro ao reservar: ' + e.message, 'error', 5000);
+    btn.disabled = false; btn.textContent = 'Reservar horário';
+  }
+}
+
+export function showReservationState(data) {
+  document.getElementById('c1').style.display = 'none';
+  document.getElementById('c2').style.display = 'none';
+  document.querySelector('.steps').style.display = 'none';
+  document.getElementById('resvLeadId').textContent  = st.leadId || '—';
+  document.getElementById('resvCloser').textContent  = '****';
+  document.getElementById('resvSlot').textContent    = st.selectedSlotLabel || '—';
+  document.getElementById('resvSeg').textContent     = SEGS[st.segKey].label + ' · ' + st.subLabel;
+  document.getElementById('resvVal').textContent     = fmtBRL(st.rawValue);
+  document.getElementById('resvSub').textContent     = st.selectedSlotLabel + ' · ' + fmtBRL(st.rawValue);
+  st.tempEventId = data.tempEventId;
+  reservationExpiresAt = Date.now() + (24 * 60 * 60 * 1000);
+  startReservationTimer();
+  document.getElementById('reservationState').style.display = 'block';
+  showToast('Horário reservado com sucesso', 'success');
+}
+
+export function startReservationTimer() {
+  if (reservationTimer) clearInterval(reservationTimer);
+  function tick() {
+    var remaining = reservationExpiresAt - Date.now();
+    if (remaining <= 0) {
+      clearInterval(reservationTimer);
+      document.getElementById('timerLabel').textContent = 'Expirada';
+      document.getElementById('timerFill').style.width = '0%';
+      showToast('Reserva expirada — o slot foi liberado automaticamente', 'info', 6000);
+      return;
+    }
+    var totalMs = 24 * 60 * 60 * 1000;
+    var pct     = (remaining / totalMs) * 100;
+    var hours   = Math.floor(remaining / (60 * 60 * 1000));
+    var minutes = Math.floor((remaining % (60 * 60 * 1000)) / 60000);
+    document.getElementById('timerLabel').textContent = hours + 'h ' + String(minutes).padStart(2,'0') + 'm';
+    document.getElementById('timerFill').style.width = pct + '%';
+  }
+  tick();
+  reservationTimer = setInterval(tick, 60000);
+}
+
+export async function doConfirmFinal(){
+  var btn = document.querySelector('.btn-confirm-final');
+  btn.disabled = true; btn.textContent = 'Confirmando...';
+  if (reservationTimer) clearInterval(reservationTimer);
+  try {
+    const res = await authFetch(API.confirm, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        closerId:      st.closerId,
+        slotId:        st.selectedSlotId,
+        slotStart:     st.selectedSlotStart,
+        slotEnd:       st.selectedSlotEnd,
+        tempEventId:   st.tempEventId,
+        leadId:        st.leadId,
+        clientEmail:   st.clientEmail,
+        clientValue:   st.rawValue,
+        segmentKey:    st.segKey,
+        subgroupKey:   st.subKey,
+        sdrEmail:      session ? session.email : '',
+        ts:            new Date().toISOString(),
+        mode:          st.useSpecificSlot ? 'specific_date' : 'schedule',
+        competitor:    st.competitor || '',
+        campaignActive: st.campaignActive || false
+      })
+    });
+    const raw = await res.json();
+    const data = Array.isArray(raw) ? raw[0] : raw;
+    if (data.error) throw new Error(data.error);
+    document.getElementById('reservationState').style.display = 'none';
+    showSuccess(data);
+  } catch(e) {
+    showToast('Erro ao confirmar: ' + e.message, 'error', 5000);
+    btn.disabled = false; btn.textContent = 'Cliente confirmou';
+  }
+}
+
+export async function doCancelReserve(){
+  var btn = document.querySelector('.btn-cancel-reserve');
+  btn.disabled = true; btn.textContent = 'Cancelando...';
+  if (reservationTimer) clearInterval(reservationTimer);
+  try {
+    const res = await authFetch(API.cancelReserve, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        closerId:    st.closerId,
+        slotId:      st.selectedSlotId,
+        slotStart:   st.selectedSlotStart,
+        slotEnd:     st.selectedSlotEnd,
+        tempEventId: st.tempEventId,
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    showToast('Reserva cancelada — slot liberado', 'info');
+    resetAll();
+  } catch(e) {
+    showToast('Erro ao cancelar: ' + e.message, 'error', 5000);
+    btn.disabled = false; btn.textContent = 'Cancelar reserva';
+  }
+}
+
+export async function doConfirm(){ /* legacy — não usado */ }
+
+export function showSuccess(data){
+  document.getElementById('c1').style.display='none';
+  document.getElementById('c2').style.display='none';
+  document.querySelector('.steps').style.display='none';
+
+  /* Foto: prioridade → API → mapa local → pool aleatório */
+  var photo = data.closerPhoto || getCloserPhoto(st.closerId);
+  var name  = data.closerName || '—';
+
+  var imgEl = document.getElementById('revPhoto');
+  var initEl = document.getElementById('revInitials');
+  if (photo) {
+    imgEl.src = photo;
+    imgEl.alt = name;
+    imgEl.style.display = 'block';
+    initEl.style.display = 'none';
+  } else {
+    initEl.textContent = name[0].toUpperCase();
+    initEl.style.display = 'flex';
+    imgEl.style.display = 'none';
+  }
+
+  document.getElementById('revName').textContent = name;
+  document.getElementById('revNameAlert').textContent = name;
+  document.getElementById('revRole').textContent = SEGS[st.segKey].label + ' · ' + st.subLabel;
+  document.getElementById('succSub').textContent = st.selectedSlotLabel + ' · ' + fmtBRL(st.rawValue);
+  document.getElementById('successState').style.display = 'block';
+}
+
+export function resetAll(){
+  st={rawValue:0,leadId:null,clientEmail:null,segKey:null,subKey:null,subLabel:null,competitor:null,campaignActive:false,
+      closerId:null,queue:[],refused:[],weekOffset:0,
+      selectedSlotId:null,selectedSlotLabel:null,selectedSlotStart:null,selectedSlotEnd:null,
+      tempEventId:null};
+  ['leadIdInput','clientEmailInput'].forEach(function(id){ document.getElementById(id).value=''; document.getElementById(id).classList.remove('error'); });
+  var compEl = document.getElementById('competitorInput'); if(compEl) { compEl.value=''; compEl.classList.remove('error'); }
+  document.getElementById('valInput').value='';
+  document.getElementById('leadIdError').style.display='none';
+  document.getElementById('clientEmailError').style.display='none';
+  updateTag();
+  if (reservationTimer) clearInterval(reservationTimer);
+  document.getElementById('reservationState').style.display='none';
+  document.getElementById('algoAnim').style.display='none';
+  ['c1','c2'].forEach(function(id){ var e=document.getElementById(id); e.style.display=''; });
+  document.getElementById('c2').style.display='none';
+  document.getElementById('c1').classList.remove('dimmed');
+  document.getElementById('c2').classList.add('dimmed');
+  document.getElementById('successState').style.display='none';
+  document.getElementById('confirmBox').style.display='none';
+  document.getElementById('refusedLog').style.display='none';
+  document.getElementById('btnConfirm').disabled=true;
+  document.getElementById('btnConfirm').textContent='Confirmar agendamento';
+  var btnFinal = document.querySelector('.btn-confirm-final');
+  if (btnFinal) { btnFinal.disabled = false; btnFinal.textContent = 'Cliente confirmou'; }
+  document.getElementById('queueInfo').textContent='';
+  document.querySelector('.steps').style.display='';
+  [['b1','l1',1],['b2','l2',2],['b3','l3',3]].forEach(function(arr){
+    var b=document.getElementById(arr[0]); b.className='step-dot'+(arr[2]===1?' active':''); b.textContent=arr[2];
+    document.getElementById(arr[1]).className='step-label'+(arr[2]===1?' active':'');
+  });
+  ['conn1','conn2'].forEach(function(id){ document.getElementById(id).classList.remove('done'); });
+}
+
+export function onCompetitorChange() {
+  var val = document.getElementById('competitorInput').value;
+  if (val) {
+    document.getElementById('competitorError').style.display = 'none';
+    document.getElementById('competitorInput').classList.remove('error');
+  }
+  st.competitor = val;
+}
+

@@ -1,127 +1,89 @@
 /* ══════════════════════════════════════════════
-   dashboard-capacity.js — Aba Capacidade. Equivalente ao Fluxo 10 (capacity).
+   utils.js — Funções utilitárias puras
+   Sem dependência de DOM, estado global ou API.
    ══════════════════════════════════════════════ */
 
 
-import { API } from './api.js';
-import { authFetch } from './auth.js';
+import { SEGS } from './api.js';
 
-import { API, SEGS } from './api.js';
-import { session, st } from './state.js';
-import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
-import { showToast } from './ui.js';
+import { SEGS } from './api.js';
 
-export async function loadCapacity() {
-  const segment   = document.getElementById('capSegment').value;
-  const weekOffset = parseInt(document.getElementById('capWeek').value);
-  const aggGrid   = document.getElementById('capAggGrid');
-  const tbody     = document.getElementById('capTableBody');
-  aggGrid.innerHTML = '<div class="cap-day-card" style="grid-column:1/-1;text-align:center;color:var(--txt-3);">Carregando...</div>';
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--txt-3);padding:24px;">Carregando...</td></tr>';
-
-  try {
-    var d;
-    if (segment === 'ALL') {
-      // Busca os 3 segmentos e agrega
-      const [rSMB, rMID, rENT] = await Promise.all([
-        authFetch(API.capacity, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ segment:'SMB', weekOffset }) }),
-        authFetch(API.capacity, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ segment:'MID', weekOffset }) }),
-        authFetch(API.capacity, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ segment:'ENT', weekOffset }) })
-      ]);
-      const safeJson = async function(r) { try { const t = await r.text(); return t ? JSON.parse(t) : {}; } catch(e) { return {}; } };
-      const [dSMB, dMID, dENT] = await Promise.all([safeJson(rSMB), safeJson(rMID), safeJson(rENT)]);
-      const emptySegment = { aggregated: {seg:0,ter:0,qua:0,qui:0,sex:0}, closers: [], totalClosers: 0, dayDates: {} };
-      const s = (Array.isArray(dSMB) ? dSMB[0] : dSMB) || emptySegment;
-      const m = (Array.isArray(dMID) ? dMID[0] : dMID) || emptySegment;
-      const e = (Array.isArray(dENT) ? dENT[0] : dENT) || emptySegment;
-      if (!s.aggregated) s.aggregated = emptySegment.aggregated;
-      if (!m.aggregated) m.aggregated = emptySegment.aggregated;
-      if (!e.aggregated) e.aggregated = emptySegment.aggregated;
-      const days = ['seg','ter','qua','qui','sex'];
-      const agg = { seg:0, ter:0, qua:0, qui:0, sex:0 };
-      days.forEach(function(day) {
-        agg[day] = (s.aggregated[day]||0) + (m.aggregated[day]||0) + (e.aggregated[day]||0);
-      });
-      const tagSeg = function(closers, seg) { return (closers||[]).map(function(c){ return Object.assign({}, c, {segment: seg}); }); };
-      d = {
-        segment: 'ALL',
-        weekOffset,
-        dayDates: s.dayDates,
-        aggregated: agg,
-        closers: tagSeg(s.closers,'SMB').concat(tagSeg(m.closers,'MID')).concat(tagSeg(e.closers,'ENT')),
-        totalClosers: (s.totalClosers||0) + (m.totalClosers||0) + (e.totalClosers||0)
-      };
-    } else {
-      const r = await authFetch(API.capacity, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ segment, weekOffset })
-      });
-      const raw = await r.json();
-      d = Array.isArray(raw) ? raw[0] : raw;
-    }
-
-    const days = ['seg','ter','qua','qui','sex'];
-    const dayLabels = { seg:'Seg', ter:'Ter', qua:'Qua', qui:'Qui', sex:'Sex' };
-    const maxSlots = 5; // max por closer por dia (blocos fixos de 1h30)
-
-    // Agrega total de closers para threshold
-    const totalClosers = d.totalClosers || 1;
-    const highThreshold = maxSlots * totalClosers * 0.7;
-    const midThreshold  = maxSlots * totalClosers * 0.4;
-
-    // Bloco agregado
-    aggGrid.innerHTML = days.map(function(day) {
-      const count = d.aggregated[day] || 0;
-      const cls = count >= highThreshold ? 'cap-green' : count >= midThreshold ? 'cap-yellow' : 'cap-red';
-      return '<div class="cap-day-card ' + cls + '">' +
-        '<div class="cap-day-label">' + dayLabels[day] + '</div>' +
-        '<div class="cap-day-date">' + (d.dayDates[day]||'') + '</div>' +
-        '<div class="cap-day-count">' + count + '</div>' +
-        '<div class="cap-day-sub">slots disponíveis</div>' +
-      '</div>';
-    }).join('');
-
-    // Tabela detalhe
-    if (!d.closers || d.closers.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--txt-3);padding:24px;">Nenhum closer ativo neste segmento.</td></tr>';
-      return;
-    }
-
-    if (segment === 'ALL') {
-      // Agrupa por segmento
-      var segOrder = ['SMB', 'MID', 'ENT'];
-      var segLabels = { SMB: 'N2-N3', MID: 'N4-N5', ENT: 'N6+' };
-      var segColors = { SMB: 'var(--yellow)', MID: '#48b4ff', ENT: '#a064ff' };
-      var rows = '';
-      segOrder.forEach(function(seg) {
-        var segClosers = d.closers.filter(function(c) { return c.segment === seg; });
-        if (segClosers.length === 0) return;
-        rows += '<tr><td colspan="7" style="padding:10px 12px 6px;font-size:11px;font-weight:700;color:' + segColors[seg] + ';text-transform:uppercase;letter-spacing:0.08em;background:var(--bg-hover);">' + segLabels[seg] + '</td></tr>';
-        segClosers.forEach(function(c) {
-          const cells = days.map(function(day) {
-            const n = c.days[day] || 0;
-            const cls = n >= 4 ? 'cap-cell-ok' : n >= 2 ? 'cap-cell-med' : 'cap-cell-low';
-            return '<td class="cap-cell-num ' + cls + '">' + n + '</td>';
-          }).join('');
-          rows += '<tr><td>' + c.name + '</td>' + cells + '<td class="cap-cell-num">' + c.total + '</td></tr>';
-        });
-      });
-      tbody.innerHTML = rows;
-    } else {
-      tbody.innerHTML = d.closers.map(function(c) {
-        const cells = days.map(function(day) {
-          const n = c.days[day] || 0;
-          const cls = n >= 4 ? 'cap-cell-ok' : n >= 2 ? 'cap-cell-med' : 'cap-cell-low';
-          return '<td class="cap-cell-num ' + cls + '">' + n + '</td>';
-        }).join('');
-        return '<tr><td>' + c.name + '</td>' + cells + '<td class="cap-cell-num">' + c.total + '</td></tr>';
-      }).join('');
-    }
-
-  } catch(e) {
-    aggGrid.innerHTML = '<div style="color:var(--red);padding:16px;">Erro: ' + e.message + '</div>';
-    tbody.innerHTML = '';
-  }
+/* Classifica um valor de cliente em segmento + subgrupo */
+export function classify(v) {
+  for (const [sk, seg] of Object.entries(SEGS))
+    for (const sg of seg.sub)
+      if (v >= sg.min && v <= sg.max) return { segKey: sk, subKey: sg.key, subLabel: sg.label };
+  return null;
 }
 
+/* Formata valor em R$ compacto (ex: R$ 1.5M, R$ 600k) */
+export function fmtBRL(v) {
+  if (v >= 1000000) return 'R$ ' + (v / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'M';
+  if (v >= 1000)    return 'R$ ' + (v / 1000).toFixed(0) + 'k';
+  return 'R$ ' + v;
+}
+
+/* Formata valor em R$ compacto — variante usada na animação de login */
+export function fv(v) {
+  if (v >= 1000000) return 'R$ ' + (v / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'M';
+  if (v >= 1000)    return 'R$ ' + (v / 1000).toFixed(0) + 'k';
+  return 'R$ ' + v;
+}
+
+/* Retorna a segunda-feira da semana corrente + offset de semanas */
+export function getMon(offset) {
+  var now = new Date(); var day = now.getDay();
+  var mon = new Date(now); mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+  return mon;
+}
+
+/* ── Photo map — atribuição de foto por email ─── */
+const PHOTO_POOL = [
+  'https://i.ibb.co/bgsrKmys/ana-victoria.png',
+  'https://i.ibb.co/0pmymzHK/beatriz-perrotta.png',
+  'https://i.ibb.co/fdPPCMn4/camila-harumi.png',
+  'https://i.ibb.co/Y4PW73ww/debora-holmo.png',
+  'https://i.ibb.co/bM95vJhy/deborah-eulalio.png',
+  'https://i.ibb.co/4g1wy3kt/gustavo-duarte.png',
+  'https://i.ibb.co/cSxtn8Qh/izabella-neves.png',
+  'https://i.ibb.co/gFdjBLSY/jeanne-marie.png',
+  'https://i.ibb.co/9mJ1NVt8/lucas-guerrero.png',
+  'https://i.ibb.co/0jPmQjJf/maria-dabbur.png',
+  'https://i.ibb.co/G3fyz6qm/olivio-blach.png',
+  'https://i.ibb.co/tpdTWvbX/rafael-rufino.png',
+  'https://i.ibb.co/SXRSkt9K/rayane-natalia.png',
+  'https://i.ibb.co/xKpDM2Zj/roberta-candido.png',
+  'https://i.ibb.co/5gN7LzcL/thaissa-pinho.png',
+  'https://i.ibb.co/XxKxSg2K/fernanda-cardoso.png',
+  'https://i.ibb.co/pr54Kv1X/gabriel-botini.png',
+  'https://i.ibb.co/x8Cwt2p6/guilherme-baeta.png',
+  'https://i.ibb.co/chsMF3QP/lucas-foureaux.png',
+  'https://i.ibb.co/8L0nypP8/mateus-pereira.png',
+  'https://i.ibb.co/kstjMmVq/sarah-andrade.png',
+  'https://i.ibb.co/v6YDZV9P/matheus-vilela.png',
+];
+
+const PHOTO_BY_EMAIL = {
+  'fernanda.cardoso@hotmart.com': 'https://i.ibb.co/XxKxSg2K/fernanda-cardoso.png',
+  'gabriel.botini@hotmart.com':   'https://i.ibb.co/pr54Kv1X/gabriel-botini.png',
+  'guilherme.baeta@hotmart.com':  'https://i.ibb.co/x8Cwt2p6/guilherme-baeta.png',
+  'lucas.damasceno@hotmart.com':  'https://i.ibb.co/chsMF3QP/lucas-foureaux.png',
+  'mateus.pereira@hotmart.com':   'https://i.ibb.co/8L0nypP8/mateus-pereira.png',
+  'sarah.sena@hotmart.com':       'https://i.ibb.co/kstjMmVq/sarah-andrade.png',
+  'matheus.vilela@hotmart.com':   'https://i.ibb.co/v6YDZV9P/matheus-vilela.png',
+};
+
+export function getCloserPhoto(email) {
+  if (PHOTO_BY_EMAIL[email]) return PHOTO_BY_EMAIL[email];
+  var h = 0;
+  for (var i = 0; i < (email || '').length; i++) h = (h * 31 + email.charCodeAt(i)) & 0xFFFF;
+  return PHOTO_POOL[h % PHOTO_POOL.length];
+}
+
+/* ── Helpers de canvas usados pela animação ───── */
+export function rr2(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
+export function eio2(t){return t<0.5?2*t*t:-1+(4-2*t)*t;}
+export function cl2(v,a,b){return Math.max(a,Math.min(b,v));}
+export function dperson(ctx,px,py,sz,alpha,col,ring){ctx.save();ctx.globalAlpha=cl2(alpha,0,1);if(ring){ctx.beginPath();ctx.arc(px,py,sz,0,Math.PI*2);ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.globalAlpha=cl2(alpha*.55,0,1);ctx.stroke();ctx.globalAlpha=cl2(alpha,0,1);}ctx.beginPath();ctx.arc(px,py-sz*.22,sz*.28,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.beginPath();ctx.arc(px,py+sz*.26,sz*.42,Math.PI*1.1,Math.PI*1.9,false);ctx.fillStyle=col;ctx.fill();ctx.restore();}
+
+export function Pt(sx,sy,tx,ty,col,delay,r){this.sx=sx;this.sy=sy;this.tx=tx;this.ty=ty;this.x=sx;this.y=sy;this.color=col;this.delay=delay;this.r=r||4;this.t=0;this.done=false;this.cpx=(sx+tx)/2+(Math.random()-.5)*26;this.cpy=(sy+ty)/2+(Math.random()-.5)*42;}
