@@ -22,12 +22,6 @@ export function fmtBRL(v) {
   return 'R$ ' + v;
 }
 
-/* Formata valor em R$ compacto — variante usada na animação de login */
-) + 'M';
-  if (v >= 1000)    return 'R$ ' + (v / 1000).toFixed(0) + 'k';
-  return 'R$ ' + v;
-}
-
 /* Retorna a segunda-feira da semana corrente + offset de semanas */
 export function getMon(offset) {
   var now = new Date(); var day = now.getDay();
@@ -77,7 +71,4 @@ export function getCloserPhoto(email) {
   for (var i = 0; i < (email || '').length; i++) h = (h * 31 + email.charCodeAt(i)) & 0xFFFF;
   return PHOTO_POOL[h % PHOTO_POOL.length];
 }
-
-/* ── Helpers de canvas usados pela animação ───── */
-ctx.beginPath();ctx.arc(px,py-sz*.22,sz*.28,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();ctx.beginPath();ctx.arc(px,py+sz*.26,sz*.42,Math.PI*1.1,Math.PI*1.9,false);ctx.fillStyle=col;ctx.fill();ctx.restore();}
 
