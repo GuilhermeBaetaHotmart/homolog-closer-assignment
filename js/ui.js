@@ -1,26 +1,19 @@
 /* ══════════════════════════════════════════════
-   ui.js — Componentes de UI genéricos (toast, tema).
+   ui.js — Componentes de UI genéricos
    ══════════════════════════════════════════════ */
 
-
-
-import { API, SEGS } from './api.js';
-import { session, st } from './state.js';
-import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
-import { showToast } from './ui.js';
-
 export function showToast(msg, type, duration) {
-  type     = type     || 'success';
-  duration = duration || 3000;
-  var container = document.getElementById('toastContainer');
-  var toast = document.createElement('div');
-  toast.className = 'toast toast-' + type;
-  toast.innerHTML = '<div class="toast-dot"></div><span>' + msg + '</span>';
-  container.appendChild(toast);
+  var tc = document.getElementById('toastContainer');
+  if (!tc) return;
+  var t = document.createElement('div');
+  t.className = 'toast toast-' + (type || 'info');
+  t.textContent = msg;
+  tc.appendChild(t);
+  setTimeout(function() { t.classList.add('show'); }, 10);
   setTimeout(function() {
-    toast.classList.add('toast-out');
-    setTimeout(function() { toast.remove(); }, 260);
-  }, duration);
+    t.classList.remove('show');
+    setTimeout(function() { t.remove(); }, 300);
+  }, duration || 3500);
 }
 
 export function toggleTheme() {
@@ -29,4 +22,3 @@ export function toggleTheme() {
   if (btn) btn.textContent = isLight ? '☀️' : '🌙';
   try { localStorage.setItem('ca_theme', isLight ? 'light' : 'dark'); } catch(e) {}
 }
-

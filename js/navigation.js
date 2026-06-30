@@ -13,9 +13,6 @@ import { loadCampaigns } from './dashboard-campaigns.js';
 import { loadTimeConfig } from './dashboard-time.js';
 import { loadEscalationConfig } from './dashboard-escalation.js';
 
-import { API, SEGS } from './api.js';
-import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
-import { showToast } from './ui.js';
 
 export function switchTab(tab){
   // tabs novas

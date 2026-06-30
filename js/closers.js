@@ -3,12 +3,10 @@
    ══════════════════════════════════════════════ */
 
 
-import { API, SEGS } from './api.js';
+import { API } from './api.js';
 import { authFetch } from './auth.js';
 import { showToast } from './ui.js';
 
-import { session, st } from './state.js';
-import { fmtBRL, classify, getCloserPhoto, getMon } from './utils.js';
 
 export async function toggleCloser(email, trackId) {
   var track = document.getElementById(trackId);
